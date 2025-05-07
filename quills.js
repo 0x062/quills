@@ -1,53 +1,52 @@
 // quills_chat_bot.js
-// Automation script for auto chatting on https://quills.fun/ using Ethereum wallet authentication, ethers.js, and axios
+// Automation script for auto chatting on https://quills.fun/ using Somnia Testnet, ethers.js v6, and axios
 
 /**
  * Prerequisites:
  * - Node.js installed
- * - npm packages: ethers, axios, dotenv
+ * - npm packages: ethers@^6, axios, dotenv
  *
  * Setup:
  * 1. npm init -y
- * 2. npm install ethers axios dotenv
+ * 2. npm install ethers@^6 axios dotenv
  * 3. Create a .env file with:
- *    RPC_URL=https://dream-rpc.somnia.network  // Somnia Testnet RPC (Chain ID: 50312)
- *    PRIVATE_KEY=<your wallet private key>
+ *    RPC_URL=https://dream-rpc.somnia.network  // Somnia Testnet RPC
+ *    PRIVATE_KEY=<your Somnia wallet private key>
  *    CHAT_API_URL=https://quills.fun/api/chat
  *    MESSAGE_INTERVAL_MS=5000  // How often to send messages
- *    MESSAGE_TEXT="Hello from bot!"
+ *    MESSAGE_TEXT="Hello from Somnia bot!"
  */
 
 require('dotenv').config();
-const { ethers } = require('ethers');
+const { JsonRpcProvider, Wallet } = require('ethers');
 const axios = require('axios');
 
-// Config
+// Config from .env
 const RPC_URL = process.env.RPC_URL;
 const PRIVATE_KEY = process.env.PRIVATE_KEY;
 const CHAT_API_URL = process.env.CHAT_API_URL;
 const INTERVAL = parseInt(process.env.MESSAGE_INTERVAL_MS, 10) || 5000;
-const MESSAGE_TEXT = process.env.MESSAGE_TEXT || 'Hello from bot!';
+const MESSAGE_TEXT = process.env.MESSAGE_TEXT || 'Hello from Somnia bot!';
 
 // Initialize provider and wallet
-const provider = new ethers.providers.JsonRpcProvider(RPC_URL);
-const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
+const provider = new JsonRpcProvider(RPC_URL);
+const wallet = new Wallet(PRIVATE_KEY, provider);
 
 async function authenticate() {
-  // Step 1: Get nonce from server
-  const nonceRes = await axios.get(`${CHAT_API_URL}/nonce`, {
+  // 1) Request nonce
+  const { data: { nonce } } = await axios.get(`${CHAT_API_URL}/nonce`, {
     params: { address: wallet.address }
   });
-  const { nonce } = nonceRes.data;
 
-  // Step 2: Sign nonce
+  // 2) Sign nonce
   const signature = await wallet.signMessage(nonce);
 
-  // Step 3: Send signature for auth token
-  const authRes = await axios.post(`${CHAT_API_URL}/login`, {
+  // 3) Get auth token
+  const { data: { token } } = await axios.post(`${CHAT_API_URL}/login`, {
     address: wallet.address,
-    signature,
+    signature
   });
-  return authRes.data.token;  // JWT or similar
+  return token;
 }
 
 (async () => {
@@ -55,23 +54,22 @@ async function authenticate() {
   let token;
   try {
     token = await authenticate();
-    console.log('Authenticated! Token:', token.substring(0, 10) + '...');
+    console.log('Authenticated! Token starts with:', token.slice(0, 10));
   } catch (err) {
     console.error('Authentication failed:', err.response?.data || err.message);
     process.exit(1);
   }
 
-  console.log(`Starting auto chat: sending "${MESSAGE_TEXT}" every ${INTERVAL}ms`);
+  console.log(`Starting auto chat: "${MESSAGE_TEXT}" every ${INTERVAL}ms`);
 
-  // Periodic message sender
   setInterval(async () => {
     try {
-      const res = await axios.post(
+      const { data } = await axios.post(
         `${CHAT_API_URL}/send`,
         { message: MESSAGE_TEXT },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      console.log(`Sent message at ${new Date().toLocaleTimeString()}:`, res.data.status);
+      console.log(`Sent at ${new Date().toLocaleTimeString()}:`, data.status);
     } catch (err) {
       console.error('Error sending message:', err.response?.data || err.message);
     }
